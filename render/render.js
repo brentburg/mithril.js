@@ -45,15 +45,15 @@ module.exports = function($window) {
 		}
 	}
 	//create
-	function createNodes(parent, vnodes, start, end, hooks, nextSibling, ns) {
+	function createNodes(parent, vnodes, start, end, hooks, nextSibling, ns, context) {
 		for (var i = start; i < end; i++) {
 			var vnode = vnodes[i]
 			if (vnode != null) {
-				createNode(parent, vnode, hooks, ns, nextSibling)
+				createNode(parent, vnode, hooks, ns, nextSibling, context)
 			}
 		}
 	}
-	function createNode(parent, vnode, hooks, ns, nextSibling) {
+	function createNode(parent, vnode, hooks, ns, nextSibling, context) {
 		var tag = vnode.tag
 		if (typeof tag === "string") {
 			vnode.state = {}
@@ -61,11 +61,11 @@ module.exports = function($window) {
 			switch (tag) {
 				case "#": createText(parent, vnode, nextSibling); break
 				case "<": createHTML(parent, vnode, ns, nextSibling); break
-				case "[": createFragment(parent, vnode, hooks, ns, nextSibling); break
-				default: createElement(parent, vnode, hooks, ns, nextSibling)
+				case "[": createFragment(parent, vnode, hooks, ns, nextSibling, context); break
+				default: createElement(parent, vnode, hooks, ns, nextSibling, context)
 			}
 		}
-		else createComponent(parent, vnode, hooks, ns, nextSibling)
+		else createComponent(parent, vnode, hooks, ns, nextSibling, context)
 	}
 	function createText(parent, vnode, nextSibling) {
 		vnode.dom = $doc.createTextNode(vnode.children)
@@ -95,17 +95,17 @@ module.exports = function($window) {
 		}
 		insertNode(parent, fragment, nextSibling)
 	}
-	function createFragment(parent, vnode, hooks, ns, nextSibling) {
+	function createFragment(parent, vnode, hooks, ns, nextSibling, context) {
 		var fragment = $doc.createDocumentFragment()
 		if (vnode.children != null) {
 			var children = vnode.children
-			createNodes(fragment, children, 0, children.length, hooks, null, ns)
+			createNodes(fragment, children, 0, children.length, hooks, null, ns, context)
 		}
 		vnode.dom = fragment.firstChild
 		vnode.domSize = fragment.childNodes.length
 		insertNode(parent, fragment, nextSibling)
 	}
-	function createElement(parent, vnode, hooks, ns, nextSibling) {
+	function createElement(parent, vnode, hooks, ns, nextSibling, context) {
 		var tag = vnode.tag
 		var attrs = vnode.attrs
 		var is = attrs && attrs.is
@@ -133,12 +133,12 @@ module.exports = function($window) {
 			}
 			if (vnode.children != null) {
 				var children = vnode.children
-				createNodes(element, children, 0, children.length, hooks, null, ns)
+				createNodes(element, children, 0, children.length, hooks, null, ns, context)
 				if (vnode.tag === "select" && attrs != null) setLateSelectAttrs(vnode, attrs)
 			}
 		}
 	}
-	function initComponent(vnode, hooks) {
+	function initComponent(vnode, hooks, context) {
 		var sentinel
 		if (typeof vnode.tag.view === "function") {
 			vnode.state = Object.create(vnode.tag)
@@ -150,7 +150,7 @@ module.exports = function($window) {
 			sentinel = vnode.tag
 			if (sentinel.$$reentrantLock$$ != null) return
 			sentinel.$$reentrantLock$$ = true
-			vnode.state = (vnode.tag.prototype != null && typeof vnode.tag.prototype.view === "function") ? new vnode.tag(vnode) : vnode.tag(vnode)
+			vnode.state = (vnode.tag.prototype != null && typeof vnode.tag.prototype.view === "function") ? new vnode.tag(vnode, context) : vnode.tag(vnode, context)
 		}
 		initLifecycle(vnode.state, vnode, hooks)
 		if (vnode.attrs != null) initLifecycle(vnode.attrs, vnode, hooks)
@@ -158,10 +158,10 @@ module.exports = function($window) {
 		if (vnode.instance === vnode) throw Error("A view cannot return the vnode it received as argument")
 		sentinel.$$reentrantLock$$ = null
 	}
-	function createComponent(parent, vnode, hooks, ns, nextSibling) {
-		initComponent(vnode, hooks)
+	function createComponent(parent, vnode, hooks, ns, nextSibling, context) {
+		initComponent(vnode, hooks, context)
 		if (vnode.instance != null) {
-			createNode(parent, vnode.instance, hooks, ns, nextSibling)
+			createNode(parent, vnode.instance, hooks, ns, nextSibling, context)
 			vnode.dom = vnode.instance.dom
 			vnode.domSize = vnode.dom != null ? vnode.instance.domSize : 0
 		}
@@ -274,9 +274,9 @@ module.exports = function($window) {
 	// nodes remain together in the new list in a way that isn't covered by parts one and
 	// three of the diff algo.
 
-	function updateNodes(parent, old, vnodes, hooks, nextSibling, ns) {
+	function updateNodes(parent, old, vnodes, hooks, nextSibling, ns, context) {
 		if (old === vnodes || old == null && vnodes == null) return
-		else if (old == null || old.length === 0) createNodes(parent, vnodes, 0, vnodes.length, hooks, nextSibling, ns)
+		else if (old == null || old.length === 0) createNodes(parent, vnodes, 0, vnodes.length, hooks, nextSibling, ns, context)
 		else if (vnodes == null || vnodes.length === 0) removeNodes(old, 0, old.length)
 		else {
 			var start = 0, oldStart = 0, isOldKeyed = null, isKeyed = null
@@ -295,7 +295,7 @@ module.exports = function($window) {
 			if (isKeyed === null && isOldKeyed == null) return // both lists are full of nulls
 			if (isOldKeyed !== isKeyed) {
 				removeNodes(old, oldStart, old.length)
-				createNodes(parent, vnodes, start, vnodes.length, hooks, nextSibling, ns)
+				createNodes(parent, vnodes, start, vnodes.length, hooks, nextSibling, ns, context)
 			} else if (!isKeyed) {
 				// Don't index past the end of either list (causes deopts).
 				var commonLength = old.length < vnodes.length ? old.length : vnodes.length
@@ -307,12 +307,12 @@ module.exports = function($window) {
 					o = old[start]
 					v = vnodes[start]
 					if (o === v || o == null && v == null) continue
-					else if (o == null) createNode(parent, v, hooks, ns, getNextSibling(old, start + 1, nextSibling))
+					else if (o == null) createNode(parent, v, hooks, ns, getNextSibling(old, start + 1, nextSibling), context)
 					else if (v == null) removeNode(o)
-					else updateNode(parent, o, v, hooks, getNextSibling(old, start + 1, nextSibling), ns)
+					else updateNode(parent, o, v, hooks, getNextSibling(old, start + 1, nextSibling), ns, context)
 				}
 				if (old.length > commonLength) removeNodes(old, start, old.length)
-				if (vnodes.length > commonLength) createNodes(parent, vnodes, start, vnodes.length, hooks, nextSibling, ns)
+				if (vnodes.length > commonLength) createNodes(parent, vnodes, start, vnodes.length, hooks, nextSibling, ns, context)
 			} else {
 				// keyed diff
 				var oldEnd = old.length - 1, end = vnodes.length - 1, map, o, v, oe, ve, topSibling
@@ -324,7 +324,7 @@ module.exports = function($window) {
 					if (oe == null) oldEnd--
 					else if (ve == null) end--
 					else if (oe.key === ve.key) {
-						if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns)
+						if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns, context)
 						if (ve.dom != null) nextSibling = ve.dom
 						oldEnd--, end--
 					} else {
@@ -339,7 +339,7 @@ module.exports = function($window) {
 					else if (v == null) start++
 					else if (o.key === v.key) {
 						oldStart++, start++
-						if (o !== v) updateNode(parent, o, v, hooks, getNextSibling(old, oldStart, nextSibling), ns)
+						if (o !== v) updateNode(parent, o, v, hooks, getNextSibling(old, oldStart, nextSibling), ns, context)
 					} else {
 						break
 					}
@@ -355,9 +355,9 @@ module.exports = function($window) {
 						if (o.key !== ve.key || oe.key !== v.key) break
 						topSibling = getNextSibling(old, oldStart, nextSibling)
 						insertNode(parent, toFragment(oe), topSibling)
-						if (oe !== v) updateNode(parent, oe, v, hooks, topSibling, ns)
+						if (oe !== v) updateNode(parent, oe, v, hooks, topSibling, ns, context)
 						if (++start <= --end) insertNode(parent, toFragment(o), nextSibling)
-						if (o !== ve) updateNode(parent, o, ve, hooks, nextSibling, ns)
+						if (o !== ve) updateNode(parent, o, ve, hooks, nextSibling, ns, context)
 						if (ve.dom != null) nextSibling = ve.dom
 						oldStart++; oldEnd--
 					}
@@ -371,7 +371,7 @@ module.exports = function($window) {
 					if (oe == null) oldEnd--
 					else if (ve == null) end--
 					else if (oe.key === ve.key) {
-						if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns)
+						if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns, context)
 						if (ve.dom != null) nextSibling = ve.dom
 						oldEnd--, end--
 					} else {
@@ -381,7 +381,7 @@ module.exports = function($window) {
 					ve = vnodes[end]
 				}
 				if (start > end) removeNodes(old, oldStart, oldEnd + 1)
-				else if (oldStart > oldEnd) createNodes(parent, vnodes, start, end + 1, hooks, nextSibling, ns)
+				else if (oldStart > oldEnd) createNodes(parent, vnodes, start, end + 1, hooks, nextSibling, ns, context)
 				else {
 					// inspired by ivi https://github.com/ivijs/ivi/ by Boris Kaul
 					var originalNextSibling = nextSibling, vnodesLength = end - start + 1, oldIndices = new Array(vnodesLength), li=0, i=0, pos = 2147483647, matched = 0, map, lisIndices
@@ -396,7 +396,7 @@ module.exports = function($window) {
 								oldIndices[i-start] = oldIndex
 								oe = old[oldIndex]
 								old[oldIndex] = null
-								if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns)
+								if (oe !== ve) updateNode(parent, oe, ve, hooks, nextSibling, ns, context)
 								if (ve.dom != null) nextSibling = ve.dom
 								matched++
 							}
@@ -404,7 +404,7 @@ module.exports = function($window) {
 					}
 					nextSibling = originalNextSibling
 					if (matched !== oldEnd - oldStart + 1) removeNodes(old, oldStart, oldEnd + 1)
-					if (matched === 0) createNodes(parent, vnodes, start, end + 1, hooks, nextSibling, ns)
+					if (matched === 0) createNodes(parent, vnodes, start, end + 1, hooks, nextSibling, ns, context)
 					else {
 						if (pos === -1) {
 							// the indices of the indices of the items that are part of the
@@ -413,7 +413,7 @@ module.exports = function($window) {
 							li = lisIndices.length - 1
 							for (i = end; i >= start; i--) {
 								v = vnodes[i]
-								if (oldIndices[i-start] === -1) createNode(parent, v, hooks, ns, nextSibling)
+								if (oldIndices[i-start] === -1) createNode(parent, v, hooks, ns, nextSibling, context)
 								else {
 									if (lisIndices[li] === i - start) li--
 									else insertNode(parent, toFragment(v), nextSibling)
@@ -423,7 +423,7 @@ module.exports = function($window) {
 						} else {
 							for (i = end; i >= start; i--) {
 								v = vnodes[i]
-								if (oldIndices[i-start] === -1) createNode(parent, v, hooks, ns, nextSibling)
+								if (oldIndices[i-start] === -1) createNode(parent, v, hooks, ns, nextSibling, context)
 								if (v.dom != null) nextSibling = vnodes[i].dom
 							}
 						}
@@ -432,7 +432,7 @@ module.exports = function($window) {
 			}
 		}
 	}
-	function updateNode(parent, old, vnode, hooks, nextSibling, ns) {
+	function updateNode(parent, old, vnode, hooks, nextSibling, ns, context) {
 		var oldTag = old.tag, tag = vnode.tag
 		if (oldTag === tag) {
 			vnode.state = old.state
@@ -445,15 +445,15 @@ module.exports = function($window) {
 				switch (oldTag) {
 					case "#": updateText(old, vnode); break
 					case "<": updateHTML(parent, old, vnode, ns, nextSibling); break
-					case "[": updateFragment(parent, old, vnode, hooks, nextSibling, ns); break
-					default: updateElement(old, vnode, hooks, ns)
+					case "[": updateFragment(parent, old, vnode, hooks, nextSibling, ns, context); break
+					default: updateElement(old, vnode, hooks, ns, context)
 				}
 			}
-			else updateComponent(parent, old, vnode, hooks, nextSibling, ns)
+			else updateComponent(parent, old, vnode, hooks, nextSibling, ns, context)
 		}
 		else {
 			removeNode(old)
-			createNode(parent, vnode, hooks, ns, nextSibling)
+			createNode(parent, vnode, hooks, ns, nextSibling, context)
 		}
 	}
 	function updateText(old, vnode) {
@@ -469,8 +469,8 @@ module.exports = function($window) {
 		}
 		else vnode.dom = old.dom, vnode.domSize = old.domSize
 	}
-	function updateFragment(parent, old, vnode, hooks, nextSibling, ns) {
-		updateNodes(parent, old.children, vnode.children, hooks, nextSibling, ns)
+	function updateFragment(parent, old, vnode, hooks, nextSibling, ns, context) {
+		updateNodes(parent, old.children, vnode.children, hooks, nextSibling, ns, context)
 		var domSize = 0, children = vnode.children
 		vnode.dom = null
 		if (children != null) {
@@ -484,7 +484,7 @@ module.exports = function($window) {
 			if (domSize !== 1) vnode.domSize = domSize
 		}
 	}
-	function updateElement(old, vnode, hooks, ns) {
+	function updateElement(old, vnode, hooks, ns, context) {
 		var element = vnode.dom = old.dom
 		ns = getNameSpace(vnode) || ns
 
@@ -505,17 +505,17 @@ module.exports = function($window) {
 		else {
 			if (old.text != null) old.children = [Vnode("#", undefined, undefined, old.text, undefined, old.dom.firstChild)]
 			if (vnode.text != null) vnode.children = [Vnode("#", undefined, undefined, vnode.text, undefined, undefined)]
-			updateNodes(element, old.children, vnode.children, hooks, null, ns)
+			updateNodes(element, old.children, vnode.children, hooks, null, ns, context)
 		}
 	}
-	function updateComponent(parent, old, vnode, hooks, nextSibling, ns) {
+	function updateComponent(parent, old, vnode, hooks, nextSibling, ns, context) {
 		vnode.instance = Vnode.normalize(callHook.call(vnode.state.view, vnode))
 		if (vnode.instance === vnode) throw Error("A view cannot return the vnode it received as argument")
 		updateLifecycle(vnode.state, vnode, hooks)
 		if (vnode.attrs != null) updateLifecycle(vnode.attrs, vnode, hooks)
 		if (vnode.instance != null) {
-			if (old.instance == null) createNode(parent, vnode.instance, hooks, ns, nextSibling)
-			else updateNode(parent, old.instance, vnode.instance, hooks, nextSibling, ns)
+			if (old.instance == null) createNode(parent, vnode.instance, hooks, ns, nextSibling, context)
+			else updateNode(parent, old.instance, vnode.instance, hooks, nextSibling, ns, context)
 			vnode.dom = vnode.instance.dom
 			vnode.domSize = vnode.instance.domSize
 		}
@@ -888,7 +888,7 @@ module.exports = function($window) {
 		return true
 	}
 
-	function render(dom, vnodes) {
+	function render(dom, vnodes, context) {
 		if (!dom) throw new Error("Ensure the DOM element being passed to m.route/m.mount/m.render is not undefined.")
 		var hooks = []
 		var active = activeElement()
@@ -898,7 +898,7 @@ module.exports = function($window) {
 		if (dom.vnodes == null) dom.textContent = ""
 
 		vnodes = Vnode.normalizeChildren(Array.isArray(vnodes) ? vnodes : [vnodes])
-		updateNodes(dom, dom.vnodes, vnodes, hooks, null, namespace === "http://www.w3.org/1999/xhtml" ? undefined : namespace)
+		updateNodes(dom, dom.vnodes, vnodes, hooks, null, namespace === "http://www.w3.org/1999/xhtml" ? undefined : namespace, context)
 		dom.vnodes = vnodes
 		// `document.activeElement` can return null: https://html.spec.whatwg.org/multipage/interaction.html#dom-document-activeelement
 		if (active != null && activeElement() !== active && typeof active.focus === "function") active.focus()

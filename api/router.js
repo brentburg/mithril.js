@@ -9,10 +9,10 @@ module.exports = function($window, redrawService) {
 
 	var identity = function(v) {return v}
 	var render, component, attrs, currentPath, lastUpdate
-	var route = function(root, defaultRoute, routes) {
+	var route = function(root, defaultRoute, routes, context) {
 		if (root == null) throw new Error("Ensure the DOM element that was passed to `m.route` is not undefined")
 		function run() {
-			if (render != null) redrawService.render(root, render(Vnode(component, attrs.key, attrs)))
+			if (render != null) redrawService.render(root, render(Vnode(component, attrs.key, attrs)), context)
 		}
 		var redraw = function() {
 			run()
